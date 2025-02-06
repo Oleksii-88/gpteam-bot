@@ -69,12 +69,21 @@ async def telegram_webhook(
         logger.error(f"Error logging message content: {e}")
 
     # Извлекаем chat_id и текст
+    # Извлекаем данные из сообщения
     try:
-        chat_id = str(update.message.get("chat", {}).get("id"))
-        text = update.message.get("text", "")
+        message_dict = update.message
+        logger.info(f"Processing message: {json.dumps(message_dict, indent=2)}")
+        
+        chat = message_dict.get("chat", {})
+        logger.info(f"Chat data: {json.dumps(chat, indent=2)}")
+        
+        chat_id = str(chat.get("id"))
+        text = message_dict.get("text", "")
+        
         logger.info(f"Extracted chat_id: {chat_id}, text: {text}")
     except Exception as e:
         logger.error(f"Error extracting message details: {e}")
+        logger.error(f"Raw message: {update.message}")
         raise HTTPException(status_code=400, detail=f"Error processing message: {str(e)}")
 
     if not chat_id or not text:
