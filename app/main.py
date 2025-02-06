@@ -92,9 +92,9 @@ async def telegram_webhook(
         try:
             ai_response = await ai_service.get_response(text)
             logger.info(f"Got AI response: {ai_response}")
-    except Exception as e:
-        logger.error(f"Error getting AI response: {e}")
-        raise HTTPException(status_code=500, detail="Error getting AI response")
+        except Exception as e:
+            logger.error(f"Error getting AI response: {e}")
+            raise HTTPException(status_code=500, detail="Error getting AI response")
 
     # Отправляем ответ в Telegram
     try:
