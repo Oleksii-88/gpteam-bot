@@ -51,18 +51,24 @@ async def telegram_webhook(
     update: TelegramUpdate,
     db: AsyncSession = Depends(get_db)
 ):
+    # Логируем входящий запрос
     try:
         logger.info(f"Received webhook update: {json.dumps(update.dict(), indent=2)}")
     except Exception as e:
         logger.error(f"Error logging update: {e}")
         logger.error(f"Raw update: {update}")
+
+    # Проверяем наличие сообщения
+    if not update.message:
+        logger.error("No message in update")
+        raise HTTPException(status_code=400, detail="Message not found in update")
+
     try:
-        if not update.message:
-            logger.error("No message in update")
-            raise HTTPException(status_code=400, detail="Message not found in update")
-
         logger.info(f"Full message content: {json.dumps(update.message, indent=2)}")
+    except Exception as e:
+        logger.error(f"Error logging message content: {e}")
 
+    # Извлекаем chat_id и текст
     try:
         chat_id = str(update.message.get("chat", {}).get("id"))
         text = update.message.get("text", "")
@@ -72,34 +78,44 @@ async def telegram_webhook(
         raise HTTPException(status_code=400, detail=f"Error processing message: {str(e)}")
 
     if not chat_id or not text:
+        logger.error(f"Invalid message format: chat_id={chat_id}, text={text}")
         raise HTTPException(status_code=400, detail="Invalid message format")
 
     logger.info(f"Processing message from chat {chat_id}: {text}")
     
-    # Get AI response
+    # Получаем ответ от AI
     try:
         ai_response = await ai_service.get_response(text)
         logger.info(f"Got AI response: {ai_response}")
     except Exception as e:
         logger.error(f"Error getting AI response: {e}")
-        raise
+        raise HTTPException(status_code=500, detail="Error getting AI response")
 
-    # Send response back to Telegram
+    # Отправляем ответ в Telegram
     try:
         telegram_response = await telegram_service.send_message(chat_id, ai_response)
         logger.info(f"Telegram response: {json.dumps(telegram_response, indent=2)}")
     except Exception as e:
         logger.error(f"Error sending Telegram message: {e}")
-        raise
+        raise HTTPException(status_code=500, detail="Error sending Telegram message")
 
-    # Log the interaction
-    log = Log(
-        chat_id=chat_id,
-        input_message=text,
-        ai_request=text,
-        ai_response=ai_response,
-        status="success" if telegram_response.get("ok") else "error"
-    )
+    # Логируем взаимодействие
+    try:
+        log = Log(
+            chat_id=chat_id,
+            input_message=text,
+            ai_request=text,
+            ai_response=ai_response,
+            status="success" if telegram_response.get("ok") else "error"
+        )
+        db.add(log)
+        await db.commit()
+        logger.info("Interaction logged successfully")
+    except Exception as e:
+        logger.error(f"Error logging interaction: {e}")
+        # Не прерываем работу бота из-за ошибки логирования
+        
+    return {"status": "ok"}
     
     db.add(log)
     await db.commit()
