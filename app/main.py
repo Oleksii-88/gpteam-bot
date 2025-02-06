@@ -1,6 +1,6 @@
 from fastapi import FastAPI, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 from typing import Optional
 import os
 import logging
@@ -42,9 +42,21 @@ async def log_requests(request: Request, call_next):
     response = await call_next(request)
     return response
 
+class Chat(BaseModel):
+    id: int
+    type: str
+    first_name: Optional[str] = None
+    username: Optional[str] = None
+
+class Message(BaseModel):
+    message_id: int
+    chat: Chat
+    text: Optional[str] = None
+    date: int
+
 class TelegramUpdate(BaseModel):
     update_id: int
-    message: Optional[dict]
+    message: Optional[Message]
 
 @app.post("/webhook")
 async def telegram_webhook(
@@ -71,16 +83,19 @@ async def telegram_webhook(
     # Извлекаем chat_id и текст
     # Извлекаем данные из сообщения
     try:
-        message_dict = update.message
-        logger.info(f"Processing message: {json.dumps(message_dict, indent=2)}")
+        if not update.message:
+            logger.error("Message is None")
+            raise HTTPException(status_code=400, detail="Message not found in update")
+            
+        logger.info(f"Processing message: {update.message}")
         
-        chat = message_dict.get("chat", {})
-        logger.info(f"Chat data: {json.dumps(chat, indent=2)}")
-        
-        chat_id = str(chat.get("id"))
-        text = message_dict.get("text", "")
+        chat_id = str(update.message.chat.id)
+        text = update.message.text or ""
         
         logger.info(f"Extracted chat_id: {chat_id}, text: {text}")
+    except ValidationError as e:
+        logger.error(f"Validation error: {e}")
+        raise HTTPException(status_code=400, detail=f"Invalid message format: {str(e)}")
     except Exception as e:
         logger.error(f"Error extracting message details: {e}")
         logger.error(f"Raw message: {update.message}")
