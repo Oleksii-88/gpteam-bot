@@ -60,9 +60,19 @@ class TelegramUpdate(BaseModel):
 
 @app.post("/webhook")
 async def telegram_webhook(
-    update: TelegramUpdate,
+    request: Request,
     db: AsyncSession = Depends(get_db)
 ):
+    # Логируем входящий JSON
+    body = await request.json()
+    logger.info(f"Raw JSON body: {json.dumps(body, indent=2)}")
+    
+    try:
+        update = TelegramUpdate.parse_obj(body)
+        logger.info("Successfully parsed TelegramUpdate model")
+    except ValidationError as e:
+        logger.error(f"Failed to parse TelegramUpdate model: {e}")
+        raise HTTPException(status_code=400, detail=f"Invalid update format: {str(e)}")
     # Логируем входящий запрос
     try:
         logger.info(f"Received webhook update: {json.dumps(update.dict(), indent=2)}")
