@@ -85,24 +85,33 @@ async def telegram_webhook(
     
     # Обрабатываем команду /start
     if text == "/start":
+        logger.info(f"Processing /start command for chat_id {chat_id}")
         ai_response = "Привет! 👋 Я AI бот, который поможет ответить на твои вопросы. Просто напиши мне что-нибудь!"
-        logger.info("Sending welcome message")
+        logger.info(f"Generated welcome message: {ai_response}")
     else:
         # Получаем ответ от AI для обычных сообщений
         try:
+            logger.info(f"Getting AI response for message: {text}")
             ai_response = await ai_service.get_response(text)
             logger.info(f"Got AI response: {ai_response}")
         except Exception as e:
             logger.error(f"Error getting AI response: {e}")
             raise HTTPException(status_code=500, detail="Error getting AI response")
+    
+    # Логируем попытку отправки сообщения
+    logger.info(f"Attempting to send message to chat_id {chat_id}")
 
     # Отправляем ответ в Telegram
     try:
+        logger.info(f"Sending message to Telegram - chat_id: {chat_id}, message: {ai_response}")
         telegram_response = await telegram_service.send_message(chat_id, ai_response)
-        logger.info(f"Telegram response: {json.dumps(telegram_response, indent=2)}")
+        logger.info(f"Telegram API response: {json.dumps(telegram_response, indent=2)}")
+        if not telegram_response.get('ok'):
+            logger.error(f"Telegram API returned error: {telegram_response}")
+            raise HTTPException(status_code=500, detail=f"Telegram API error: {telegram_response.get('description', 'Unknown error')}")
     except Exception as e:
-        logger.error(f"Error sending Telegram message: {e}")
-        raise HTTPException(status_code=500, detail="Error sending Telegram message")
+        logger.error(f"Error sending Telegram message: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error sending Telegram message: {str(e)}")
 
     # Логируем взаимодействие
     try:
