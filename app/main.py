@@ -70,11 +70,19 @@ class TelegramUpdate(BaseModel):
     update_id: int
     message: Optional[Message]
 
+from starlette.requests import ClientDisconnect
+from starlette.background import BackgroundTask
+
 @app.post("/webhook")
 async def telegram_webhook(request: Request) -> dict:
     try:
         # Получаем тело запроса как bytes
-        body_bytes = await request.body()
+        try:
+            body_bytes = await request.body()
+        except ClientDisconnect:
+            logger.warning("Client disconnected while reading request body")
+            return {"ok": True}  # Возвращаем 200 OK для Telegram
+        
         # Декодируем bytes в строку
         body_str = body_bytes.decode()
         # Парсим JSON
