@@ -71,10 +71,39 @@ class TelegramUpdate(BaseModel):
     message: Optional[Message]
 
 @app.post("/webhook")
-async def telegram_webhook(
-    request: Request,
-    db: AsyncSession = Depends(get_db)
-) -> dict:
+async def telegram_webhook(request: Request) -> dict:
+    try:
+        # Получаем тело запроса как bytes
+        body_bytes = await request.body()
+        # Декодируем bytes в строку
+        body_str = body_bytes.decode()
+        # Парсим JSON
+        update = json.loads(body_str)
+        
+        # Логируем входящий запрос
+        logger.info(f"Received update: {body_str}")
+        
+        # Проверяем наличие сообщения
+        if 'message' not in update:
+            logger.error("No message in update")
+            return {"ok": False, "error": "No message in update"}
+            
+        message = update['message']
+        chat_id = str(message['chat']['id'])
+        text = message.get('text', '')
+        
+        # Обрабатываем команду /start
+        if text == '/start':
+            response_text = "Привет!"
+            # Отправляем ответ
+            await telegram_service.send_message(chat_id, response_text)
+            return {"ok": True}
+            
+        return {"ok": True}
+        
+    except Exception as e:
+        logger.error(f"Error processing webhook: {str(e)}")
+        return {"ok": False, "error": str(e)}
     try:
         body_bytes = await request.body()
         body = json.loads(body_bytes)
