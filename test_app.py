@@ -12,7 +12,10 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Настройка логирования
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 logger = logging.getLogger(__name__)
 
 # Получение токена бота
@@ -27,8 +30,23 @@ async def test_endpoint():
     return {
         "status": "ok",
         "hostname": socket.gethostname(),
-        "message": "Test successful!"
+        "message": "Test successful!",
+        "bot_token_length": len(BOT_TOKEN) if BOT_TOKEN else 0,
+        "bot_token_starts_with": BOT_TOKEN[:4] + '...' if BOT_TOKEN else None
     }
+
+@app.get("/webhook_info")
+async def webhook_info():
+    """Проверка настроек webhook'а"""
+    async with httpx.AsyncClient() as client:
+        try:
+            url = f"https://api.telegram.org/bot{BOT_TOKEN}/getWebhookInfo"
+            response = await client.get(url)
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            logger.error(f"Error getting webhook info: {e}")
+            return {"error": str(e)}
 
 async def send_telegram_message(chat_id: str, text: str):
     """Отправка сообщения в Telegram"""
@@ -50,6 +68,10 @@ async def send_telegram_message(chat_id: str, text: str):
 @app.post("/webhook")
 async def telegram_webhook(request: Request):
     try:
+        # Логируем заголовки запроса
+        headers = dict(request.headers)
+        logger.info(f"Received headers: {json.dumps(headers)}")
+        
         # Читаем данные запроса
         update_data = await request.json()
         logger.info(f"Received update: {json.dumps(update_data)}")
