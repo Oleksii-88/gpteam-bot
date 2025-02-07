@@ -5,8 +5,10 @@ from typing import Optional
 import os
 import logging
 import json
+import asyncio
 from starlette.requests import ClientDisconnect
 from starlette.responses import JSONResponse
+from starlette.background import BackgroundTask
 
 from app.database.connection import get_db
 from app.models.log import Log
@@ -70,13 +72,11 @@ class TelegramUpdate(BaseModel):
     update_id: int
     message: Optional[Message]
 
-from starlette.requests import ClientDisconnect
-from starlette.background import BackgroundTask
-import asyncio
-
 async def process_telegram_update(update_data: dict):
     """Process Telegram update in background"""
     try:
+        logger.info(f"Starting to process update: {json.dumps(update_data)}")
+        
         if 'message' not in update_data:
             logger.error("No message in update")
             return
@@ -85,13 +85,21 @@ async def process_telegram_update(update_data: dict):
         chat_id = str(message['chat']['id'])
         text = message.get('text', '')
         
+        logger.info(f"Processing message: chat_id={chat_id}, text={text}")
+        
         if text == '/start':
-            response_text = "Привет!"
+            response_text = "Привет! Я бот для обработки запросов. Чем могу помочь?"
             logger.info(f"Sending response to chat {chat_id}: {response_text}")
-            result = await telegram_service.send_message(chat_id, response_text)
-            logger.info(f"Send message result: {result}")
+            try:
+                result = await telegram_service.send_message(chat_id, response_text)
+                logger.info(f"Send message result: {result}")
+            except Exception as e:
+                logger.error(f"Error sending message: {str(e)}", exc_info=True)
+        else:
+            logger.info(f"Received non-command message: {text}")
+            
     except Exception as e:
-        logger.error(f"Error processing update: {str(e)}")
+        logger.error(f"Error processing update: {str(e)}", exc_info=True)
 
 @app.post("/webhook")
 async def telegram_webhook(request: Request) -> dict:
@@ -108,5 +116,5 @@ async def telegram_webhook(request: Request) -> dict:
         # Сразу отвечаем Telegram
         return {"ok": True}
     except Exception as e:
-        logger.error(f"Error processing webhook: {str(e)}")
+        logger.error(f"Error processing webhook: {str(e)}", exc_info=True)
         return {"ok": False, "error": str(e)}
