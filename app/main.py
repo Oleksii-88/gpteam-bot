@@ -74,7 +74,17 @@ class TelegramUpdate(BaseModel):
 async def telegram_webhook(
     request: Request,
     db: AsyncSession = Depends(get_db)
-):
+) -> dict:
+    try:
+        body_bytes = await request.body()
+        body = json.loads(body_bytes)
+        logger.info(f"Raw JSON body: {json.dumps(body, indent=2)}")
+    except json.JSONDecodeError as e:
+        logger.error(f"Invalid JSON: {e}")
+        return {"status": "error", "detail": "Invalid JSON"}
+    except Exception as e:
+        logger.error(f"Error reading request body: {e}")
+        return {"status": "error", "detail": str(e)}
     try:
         # Логируем входящий JSON
         try:
@@ -146,7 +156,7 @@ async def telegram_webhook(
     # Обрабатываем команду /start
     if text == "/start":
         logger.info(f"Processing /start command for chat_id {chat_id}")
-        ai_response = "Привет! 👋 Я AI бот, который поможет ответить на твои вопросы. Просто напиши мне что-нибудь!"
+        ai_response = "Привет!"
         logger.info(f"Generated welcome message: {ai_response}")
     else:
         # Получаем ответ от AI для обычных сообщений
