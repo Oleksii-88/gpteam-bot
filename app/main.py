@@ -77,8 +77,15 @@ async def telegram_webhook(
 ):
     try:
         # Логируем входящий JSON
-        body = await request.json()
-        logger.info(f"Raw JSON body: {json.dumps(body, indent=2)}")
+        try:
+            body = await request.json()
+            logger.info(f"Raw JSON body: {json.dumps(body, indent=2)}")
+        except ClientDisconnect:
+            logger.warning("Client disconnected while reading webhook request body")
+            return JSONResponse({"status": "error", "detail": "Client disconnected"}, status_code=499)
+        except Exception as e:
+            logger.error(f"Error reading webhook request body: {e}")
+            raise HTTPException(status_code=400, detail=f"Error reading request body: {str(e)}")
     except ClientDisconnect:
         logger.warning("Client disconnected while reading request body")
         return {"status": "error", "detail": "Client disconnected"}
