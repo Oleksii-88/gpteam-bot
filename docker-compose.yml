@@ -4,7 +4,7 @@ services:
   web:
     build: .
     ports:
-      - "8000:8000"
+      - "8001:8000"
     command: ["python", "test_app.py"]
     environment:
       - DATABASE_URL=postgresql+asyncpg://telegram_bot:telegram_pass@db/telegram_bot_db
