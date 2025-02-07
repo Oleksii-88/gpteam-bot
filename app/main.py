@@ -6,6 +6,7 @@ import os
 import logging
 import json
 from starlette.requests import ClientDisconnect
+from starlette.responses import JSONResponse
 
 from app.database.connection import get_db
 from app.models.log import Log
@@ -37,11 +38,21 @@ async def log_requests(request: Request, call_next):
         body = await request.body()
         if body:
             logger.info(f"Request body: {body.decode()}")
+    except ClientDisconnect:
+        logger.warning("Client disconnected while reading request body in middleware")
+        return JSONResponse({"status": "error", "detail": "Client disconnected"}, status_code=499)
     except Exception as e:
         logger.error(f"Error reading request body: {e}")
     
-    response = await call_next(request)
-    return response
+    try:
+        response = await call_next(request)
+        return response
+    except ClientDisconnect:
+        logger.warning("Client disconnected while processing request")
+        return JSONResponse({"status": "error", "detail": "Client disconnected"}, status_code=499)
+    except Exception as e:
+        logger.error(f"Error processing request: {e}")
+        raise
 
 class Chat(BaseModel):
     id: int
