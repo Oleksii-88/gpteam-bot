@@ -12,12 +12,19 @@ class TelegramService:
         self.base_url = f"https://api.telegram.org/bot{self.token}"
 
     async def send_message(self, chat_id: str, text: str) -> dict:
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                f"{self.base_url}/sendMessage",
-                json={
+        print(f"Sending message to {chat_id}: {text}")
+        try:
+            async with httpx.AsyncClient() as client:
+                url = f"{self.base_url}/sendMessage"
+                data = {
                     "chat_id": chat_id,
                     "text": text
                 }
-            )
-            return response.json()
+                print(f"Making request to {url} with data: {data}")
+                response = await client.post(url, json=data)
+                result = response.json()
+                print(f"Telegram API response: {result}")
+                return result
+        except Exception as e:
+            print(f"Error sending message: {str(e)}")
+            raise

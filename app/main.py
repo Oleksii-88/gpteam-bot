@@ -94,10 +94,15 @@ async def telegram_webhook(request: Request) -> dict:
         
         # Обрабатываем команду /start
         if text == '/start':
-            response_text = "Привет!"
-            # Отправляем ответ
-            await telegram_service.send_message(chat_id, response_text)
-            return {"ok": True}
+            try:
+                response_text = "Привет!"
+                logger.info(f"Sending response to chat {chat_id}: {response_text}")
+                result = await telegram_service.send_message(chat_id, response_text)
+                logger.info(f"Send message result: {result}")
+                return {"ok": True, "result": result}
+            except Exception as e:
+                logger.error(f"Error sending message: {str(e)}")
+                return {"ok": False, "error": f"Failed to send message: {str(e)}"}
             
         return {"ok": True}
         
