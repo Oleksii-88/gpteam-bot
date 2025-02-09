@@ -11,17 +11,21 @@ from starlette.responses import JSONResponse
 from starlette.background import BackgroundTask
 
 from app.database.connection import get_db
-from app.models.log import Log
-from app.services.ai_service import AIService
+from app.models.user import User
 from app.services.telegram_service import TelegramService
+from app.services.user_service import UserService
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Инициализация сервисов
 app = FastAPI()
-ai_service = AIService()
 telegram_service = TelegramService()
+user_service = UserService()
+
+# ID администратора (замените на реальный ID)
+ADMIN_ID = os.getenv("ADMIN_TELEGRAM_ID")
 
 @app.on_event("startup")
 async def startup_event():
@@ -72,11 +76,75 @@ class TelegramUpdate(BaseModel):
     update_id: int
     message: Optional[Message]
 
-async def process_telegram_update(update_data: dict):
+async def process_telegram_update(update_data: dict, db: AsyncSession):
     """Process Telegram update in background"""
     try:
         logger.info(f"Starting to process update: {json.dumps(update_data)}")
         
+        # Обработка callback query (нажатия на кнопки)
+        if 'callback_query' in update_data:
+            callback_query = update_data['callback_query']
+            callback_data = callback_query['data']
+            user_id = str(callback_query['from']['id'])
+            
+            if callback_data == 'request_registration':
+                # Создаем нового пользователя
+                user_data = callback_query['from']
+                user = await user_service.create_user(
+                    db,
+                    telegram_id=str(user_id),
+                    username=user_data.get('username'),
+                    first_name=user_data.get('first_name')
+                )
+                
+                # Отправляем уведомление пользователю
+                await telegram_service.send_message(
+                    chat_id=user_id,
+                    text="✅ Ваша заявка на регистрацию отправлена администратору. Пожалуйста, ожидайте подтверждения."
+                )
+                
+                # Отправляем уведомление админу
+                if ADMIN_ID:
+                    await telegram_service.send_admin_notification(
+                        admin_chat_id=ADMIN_ID,
+                        user={
+                            'telegram_id': str(user_id),
+                            'username': user_data.get('username'),
+                            'first_name': user_data.get('first_name')
+                        }
+                    )
+            
+            elif callback_data.startswith('approve_'):
+                target_user_id = callback_data.split('_')[1]
+                if str(user_id) == ADMIN_ID:
+                    user = await user_service.update_user_status(db, target_user_id, 'approved')
+                    if user:
+                        await telegram_service.send_message(
+                            chat_id=target_user_id,
+                            text="✅ Ваша заявка на регистрацию одобрена! Теперь вы можете пользоваться ботом."
+                        )
+                        await telegram_service.send_message(
+                            chat_id=user_id,
+                            text=f"Пользователь {target_user_id} успешно одобрен."
+                        )
+            
+            elif callback_data.startswith('reject_'):
+                target_user_id = callback_data.split('_')[1]
+                if str(user_id) == ADMIN_ID:
+                    user = await user_service.update_user_status(db, target_user_id, 'rejected')
+                    if user:
+                        await telegram_service.send_message(
+                            chat_id=target_user_id,
+                            text="❌ К сожалению, ваша заявка на регистрацию отклонена."
+                        )
+                        await telegram_service.send_message(
+                            chat_id=user_id,
+                            text=f"Пользователь {target_user_id} отклонен."
+                        )
+            
+            return
+        
+        # Обработка обычных сообщений
         if 'message' not in update_data:
             logger.error("No message in update")
             return
@@ -88,15 +156,40 @@ async def process_telegram_update(update_data: dict):
         logger.info(f"Processing message: chat_id={chat_id}, text={text}")
         
         if text == '/start':
-            response_text = "Привет! Я бот для обработки запросов. Чем могу помочь?"
-            logger.info(f"Sending response to chat {chat_id}: {response_text}")
-            try:
-                result = await telegram_service.send_message(chat_id, response_text)
-                logger.info(f"Send message result: {result}")
-            except Exception as e:
-                logger.error(f"Error sending message: {str(e)}", exc_info=True)
+            # Проверяем статус пользователя
+            user = await user_service.get_user_by_telegram_id(db, chat_id)
+            
+            if not user:
+                # Новый пользователь
+                response_text = "👋 Добро пожаловать! Для использования бота необходимо зарегистрироваться."
+                await telegram_service.send_message(
+                    chat_id=chat_id,
+                    text=response_text,
+                    reply_markup=telegram_service.get_registration_keyboard()
+                )
+            elif user.status == 'pending':
+                response_text = "⏳ Ваша заявка на регистрацию находится на рассмотрении. Пожалуйста, ожидайте."
+                await telegram_service.send_message(chat_id=chat_id, text=response_text)
+            elif user.status == 'approved':
+                response_text = "✅ Добро пожаловать! Чем могу помочь?"
+                await telegram_service.send_message(chat_id=chat_id, text=response_text)
+            elif user.status == 'rejected':
+                response_text = "❌ К сожалению, ваша заявка была отклонена."
+                await telegram_service.send_message(chat_id=chat_id, text=response_text)
         else:
-            logger.info(f"Received non-command message: {text}")
+            # Проверяем, зарегистрирован ли пользователь
+            user = await user_service.get_user_by_telegram_id(db, chat_id)
+            if not user or user.status != 'approved':
+                response_text = "⚠️ Для использования бота необходимо зарегистрироваться."
+                await telegram_service.send_message(
+                    chat_id=chat_id,
+                    text=response_text,
+                    reply_markup=telegram_service.get_registration_keyboard()
+                )
+            else:
+                # Обработка сообщений для зарегистрированных пользователей
+                response_text = f"Вы написали: {text}\nСкоро я научусь отвечать более осмысленно!"
+                await telegram_service.send_message(chat_id=chat_id, text=response_text)
             
     except Exception as e:
         logger.error(f"Error processing update: {str(e)}", exc_info=True)
