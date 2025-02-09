@@ -287,7 +287,7 @@ async def telegram_webhook(request: Request, db: AsyncSession = Depends(get_db))
         return {"ok": True}
     except Exception as e:
         logger.error(f"Error in webhook: {str(e)}", exc_info=True)
-        return {"ok": False, "error": str(e)}
+        return {"ok": False, "error": str(e)}}
         
         # Логируем запрос
         logger.info(f"Received update: {json.dumps(update_data)}")
