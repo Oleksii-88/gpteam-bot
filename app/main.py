@@ -88,6 +88,49 @@ async def process_telegram_update(update_data: dict, db: AsyncSession):
             user_id = str(callback_query['from']['id'])
             
             if callback_data == 'request_registration':
+                # Проверяем, нет ли уже заявки
+                existing_user = await user_service.get_user_by_telegram_id(db, user_id)
+                if existing_user and existing_user.status == 'pending':
+                    await telegram_service.send_message(
+                        chat_id=user_id,
+                        text="⚠️ У вас уже есть активная заявка на рассмотрении."
+                    )
+                    return
+                
+                # Создаем нового пользователя или обновляем статус
+                user_data = callback_query['from']
+                if existing_user:
+                    user = await user_service.update_user_status(db, user_id, 'pending')
+                else:
+                    user = await user_service.create_user(
+                        db,
+                        telegram_id=user_id,
+                        username=user_data.get('username'),
+                        first_name=user_data.get('first_name')
+                    )
+                
+                # Отправляем уведомление пользователю
+                await telegram_service.send_message(
+                    chat_id=user_id,
+                    text="✅ Ваша заявка на регистрацию отправлена администратору. Пожалуйста, ожидайте подтверждения."
+                )
+                
+                # Отправляем уведомление админу
+                if ADMIN_ID:
+                    await telegram_service.send_admin_notification(
+                        admin_chat_id=ADMIN_ID,
+                        user={
+                            'telegram_id': user_id,
+                            'username': user_data.get('username'),
+                            'first_name': user_data.get('first_name')
+                        }
+                    )
+                return
+            callback_query = update_data['callback_query']
+            callback_data = callback_query['data']
+            user_id = str(callback_query['from']['id'])
+            
+            if callback_data == 'request_registration':
                 # Создаем нового пользователя
                 user_data = callback_query['from']
                 user = await user_service.create_user(
@@ -155,10 +198,10 @@ async def process_telegram_update(update_data: dict, db: AsyncSession):
         
         logger.info(f"Processing message: chat_id={chat_id}, text={text}")
         
+        # Проверяем статус пользователя
+        user = await user_service.get_user_by_telegram_id(db, chat_id)
+        
         if text == '/start':
-            # Проверяем статус пользователя
-            user = await user_service.get_user_by_telegram_id(db, chat_id)
-            
             if not user:
                 # Новый пользователь
                 response_text = "👋 Добро пожаловать! Для использования бота необходимо зарегистрироваться."
@@ -174,27 +217,29 @@ async def process_telegram_update(update_data: dict, db: AsyncSession):
                 await telegram_service.send_message(chat_id=chat_id, text=response_text)
                 return
             elif user.status == 'rejected':
-                response_text = "❌ К сожалению, ваша заявка была отклонена."
+                response_text = "❌ К сожалению, ваша заявка была отклонена. Вы можете подать новую заявку."
                 keyboard = telegram_service.get_registration_keyboard()
                 await telegram_service.send_message(chat_id=chat_id, text=response_text, reply_markup=keyboard)
                 return
             elif user.status == 'approved':
                 response_text = "✅ Добро пожаловать! Чем могу помочь?"
                 await telegram_service.send_message(chat_id=chat_id, text=response_text)
-        else:
-            # Проверяем, зарегистрирован ли пользователь
-            user = await user_service.get_user_by_telegram_id(db, chat_id)
-            if not user or user.status != 'approved':
-                response_text = "⚠️ Для использования бота необходимо зарегистрироваться."
-                await telegram_service.send_message(
-                    chat_id=chat_id,
-                    text=response_text,
-                    reply_markup=telegram_service.get_registration_keyboard()
-                )
-            else:
-                # Обработка сообщений для зарегистрированных пользователей
-                response_text = f"Вы написали: {text}\nСкоро я научусь отвечать более осмысленно!"
-                await telegram_service.send_message(chat_id=chat_id, text=response_text)
+                return
+        
+        # Проверяем доступ для всех остальных сообщений
+        if not user or user.status != 'approved':
+            response_text = "⚠️ Для использования бота необходимо зарегистрироваться."
+            keyboard = telegram_service.get_registration_keyboard()
+            await telegram_service.send_message(
+                chat_id=chat_id,
+                text=response_text,
+                reply_markup=keyboard
+            )
+            return
+        
+        # Обработка сообщений для зарегистрированных пользователей
+        response_text = f"Вы написали: {text}\nСкоро я научусь отвечать более осмысленно!"
+        await telegram_service.send_message(chat_id=chat_id, text=response_text)
             
     except Exception as e:
         logger.error(f"Error processing update: {str(e)}", exc_info=True)
