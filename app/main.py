@@ -131,14 +131,29 @@ async def process_telegram_update(update_data: dict, db: AsyncSession):
             user_id = str(callback_query['from']['id'])
             
             if callback_data == 'request_registration':
-                # Создаем нового пользователя
+                logger.info(f"Processing registration request from user {user_id}")
+                # Проверяем, нет ли уже заявки
+                existing_user = await user_service.get_user_by_telegram_id(db, user_id)
+                if existing_user and existing_user.status == 'pending':
+                    await telegram_service.send_message(
+                        chat_id=user_id,
+                        text="⚠️ У вас уже есть активная заявка на рассмотрении."
+                    )
+                    return
+                
+                # Создаем нового пользователя или обновляем статус
                 user_data = callback_query['from']
-                user = await user_service.create_user(
-                    db,
-                    telegram_id=str(user_id),
-                    username=user_data.get('username'),
-                    first_name=user_data.get('first_name')
-                )
+                if existing_user:
+                    user = await user_service.update_user_status(db, user_id, 'pending')
+                    logger.info(f"Updated user {user_id} status to pending")
+                else:
+                    user = await user_service.create_user(
+                        db,
+                        telegram_id=user_id,
+                        username=user_data.get('username'),
+                        first_name=user_data.get('first_name')
+                    )
+                    logger.info(f"Created new user {user_id}")
                 
                 # Отправляем уведомление пользователю
                 await telegram_service.send_message(
@@ -148,14 +163,17 @@ async def process_telegram_update(update_data: dict, db: AsyncSession):
                 
                 # Отправляем уведомление админу
                 if ADMIN_ID:
+                    logger.info(f"Sending admin notification to {ADMIN_ID}")
                     await telegram_service.send_admin_notification(
                         admin_chat_id=ADMIN_ID,
                         user={
-                            'telegram_id': str(user_id),
+                            'telegram_id': user_id,
                             'username': user_data.get('username'),
                             'first_name': user_data.get('first_name')
                         }
                     )
+                else:
+                    logger.warning("ADMIN_ID not set, skipping admin notification")
             
             elif callback_data.startswith('approve_'):
                 target_user_id = callback_data.split('_')[1]
@@ -200,12 +218,14 @@ async def process_telegram_update(update_data: dict, db: AsyncSession):
         
         # Проверяем статус пользователя
         user = await user_service.get_user_by_telegram_id(db, chat_id)
+        logger.info(f"User status for {chat_id}: {user.status if user else 'Not registered'}")
         
         if text == '/start':
-            if not user:
-                # Новый пользователь
+            if not user or user.status == 'rejected':
+                # Новый или отклоненный пользователь
                 response_text = "👋 Добро пожаловать! Для использования бота необходимо зарегистрироваться."
                 keyboard = telegram_service.get_registration_keyboard()
+                logger.info(f"Sending registration keyboard to {chat_id}")
                 await telegram_service.send_message(
                     chat_id=chat_id,
                     text=response_text,
