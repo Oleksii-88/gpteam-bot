@@ -221,6 +221,24 @@ async def process_telegram_update(update_data: dict, db: AsyncSession):
         logger.info(f"User status for {chat_id}: {user.status if user else 'Not registered'}")
         
         if text == '/start':
+            logger.info(f"Processing /start command for user {chat_id}")
+            if not user:
+                # Новый пользователь
+                response_text = "👋 Добро пожаловать! Для использования бота необходимо зарегистрироваться."
+                keyboard = telegram_service.get_registration_keyboard()
+                logger.info(f"Sending registration keyboard to new user {chat_id}")
+                await telegram_service.send_message(
+                    chat_id=chat_id,
+                    text=response_text,
+                    reply_markup=keyboard
+                )
+                return
+        
+        # Проверяем статус пользователя
+        user = await user_service.get_user_by_telegram_id(db, chat_id)
+        logger.info(f"User status for {chat_id}: {user.status if user else 'Not registered'}")
+        
+        if text == '/start':
             if not user or user.status == 'rejected':
                 # Новый или отклоненный пользователь
                 response_text = "👋 Добро пожаловать! Для использования бота необходимо зарегистрироваться."
@@ -269,10 +287,11 @@ async def telegram_webhook(request: Request, db: AsyncSession = Depends(get_db))
     try:
         # Быстро читаем тело запроса
         update_data = await request.json()
+        logger.info(f"Webhook received update: {json.dumps(update_data)}")
         await process_telegram_update(update_data, db)
         return {"ok": True}
     except Exception as e:
-        logger.error(f"Error in webhook: {str(e)}")
+        logger.error(f"Error in webhook: {str(e)}", exc_info=True)
         return {"ok": False, "error": str(e)}
         
         # Логируем запрос
