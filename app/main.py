@@ -162,19 +162,24 @@ async def process_telegram_update(update_data: dict, db: AsyncSession):
             if not user:
                 # Новый пользователь
                 response_text = "👋 Добро пожаловать! Для использования бота необходимо зарегистрироваться."
+                keyboard = telegram_service.get_registration_keyboard()
                 await telegram_service.send_message(
                     chat_id=chat_id,
                     text=response_text,
-                    reply_markup=telegram_service.get_registration_keyboard()
+                    reply_markup=keyboard
                 )
+                return
             elif user.status == 'pending':
                 response_text = "⏳ Ваша заявка на регистрацию находится на рассмотрении. Пожалуйста, ожидайте."
                 await telegram_service.send_message(chat_id=chat_id, text=response_text)
-            elif user.status == 'approved':
-                response_text = "✅ Добро пожаловать! Чем могу помочь?"
-                await telegram_service.send_message(chat_id=chat_id, text=response_text)
+                return
             elif user.status == 'rejected':
                 response_text = "❌ К сожалению, ваша заявка была отклонена."
+                keyboard = telegram_service.get_registration_keyboard()
+                await telegram_service.send_message(chat_id=chat_id, text=response_text, reply_markup=keyboard)
+                return
+            elif user.status == 'approved':
+                response_text = "✅ Добро пожаловать! Чем могу помочь?"
                 await telegram_service.send_message(chat_id=chat_id, text=response_text)
         else:
             # Проверяем, зарегистрирован ли пользователь
@@ -195,10 +200,15 @@ async def process_telegram_update(update_data: dict, db: AsyncSession):
         logger.error(f"Error processing update: {str(e)}", exc_info=True)
 
 @app.post("/webhook")
-async def telegram_webhook(request: Request) -> dict:
+async def telegram_webhook(request: Request, db: AsyncSession = Depends(get_db)) -> dict:
     try:
         # Быстро читаем тело запроса
         update_data = await request.json()
+        await process_telegram_update(update_data, db)
+        return {"ok": True}
+    except Exception as e:
+        logger.error(f"Error in webhook: {str(e)}")
+        return {"ok": False, "error": str(e)}
         
         # Логируем запрос
         logger.info(f"Received update: {json.dumps(update_data)}")
