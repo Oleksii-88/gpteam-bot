@@ -1,87 +1,139 @@
-# Telegram AI Bot with FastAPI
+# GPTeam Telegram Bot
 
-This is an MVP implementation of a Telegram bot that integrates with OpenAI's API and includes PostgreSQL logging.
+Умный Telegram бот с системой регистрации, ролевым доступом и анализом изображений с помощью OpenAI Vision API.
 
-## Features
+## Возможности
 
-- FastAPI backend with webhook endpoint for Telegram
-- OpenAI API integration
-- PostgreSQL logging of all interactions
-- Asynchronous implementation
-- Modular structure for easy expansion
+### Основные функции
+- Анализ изображений с помощью OpenAI Vision API
+- Возможность задавать вопросы об изображениях
+- Детальное описание содержимого фотографий
 
-## Prerequisites
+### Система безопасности
+- Регистрация пользователей с одобрением администратором
+- Ролевая модель доступа (USER и ADMIN роли)
+- Обработка сообщений только от зарегистрированных пользователей
 
-- Python 3.8+
-- PostgreSQL database
-- Telegram Bot Token
+### Административные команды
+- `/make_admin <user_id>` - назначить пользователя администратором
+- `/revoke_admin <user_id>` - отозвать права администратора
+- `/my_roles` - просмотр своих ролей
+
+### Техническая реализация
+- Асинхронная архитектура с использованием python-telegram-bot
+- Интеграция с OpenAI Vision API
+- Полное покрытие тестами
+
+## Требования
+
+- Python 3.11+
+- Telegram Bot Token (от @BotFather)
 - OpenAI API Key
 
-## Installation
+## Установка
 
-1. Clone the repository
-2. Create a virtual environment:
+1. Клонируйте репозиторий:
+   ```bash
+   git clone https://github.com/Oleksii-88/gpteam-bot.git
+   cd gpteam-bot
+   ```
+
+2. Создайте виртуальное окружение:
    ```bash
    python -m venv venv
-   source venv/bin/activate  # On Windows: venv\Scripts\activate
+   source venv/bin/activate  # На Windows: venv\Scripts\activate
    ```
-3. Install dependencies:
+
+3. Установите зависимости:
    ```bash
    pip install -r requirements.txt
    ```
 
-## Configuration
+## Настройка
 
-Create a `.env` file in the root directory with the following variables:
+1. Создайте файл `.env` в корневой директории на основе `.env.example`:
+   ```env
+   # Настройки Telegram
+   TELEGRAM_BOT_TOKEN=your_telegram_bot_token  # Получите у @BotFather
 
-```env
-TELEGRAM_BOT_TOKEN=your_telegram_bot_token
-OPENAI_API_KEY=your_openai_api_key
-DATABASE_URL=postgresql+asyncpg://user:password@localhost/dbname
-```
-
-## Database Setup
-
-1. Create a PostgreSQL database
-2. The tables will be created automatically when you first run the application
-
-## Running the Application
-
-1. Start the FastAPI server:
-   ```bash
-   uvicorn app.main:app --reload
+   # Настройки OpenAI
+   OPENAI_API_KEY=your_openai_api_key  # Получите на platform.openai.com
    ```
 
-2. Set up your Telegram webhook:
-   ```
-   https://api.telegram.org/bot<YOUR_BOT_TOKEN>/setWebhook?url=<YOUR_SERVER_URL>/webhook
-   ```
+2. Замените значения на ваши токены:
+   - `your_telegram_bot_token` - токен от [@BotFather](https://t.me/BotFather)
+   - `your_openai_api_key` - ключ с [OpenAI Platform](https://platform.openai.com/api-keys)
 
-## Project Structure
+## Запуск
 
-```
-app/
-├── api/
-├── database/
-│   └── connection.py
-├── models/
-│   └── log.py
-├── services/
-│   ├── ai_service.py
-│   └── telegram_service.py
-└── main.py
+### Локально
+
+```bash
+python -m app.main
 ```
 
-## Usage
+### Запуск тестов
 
-1. Start a chat with your Telegram bot
-2. Send any message
-3. The bot will process your message through the AI service and respond
-4. All interactions are automatically logged in the PostgreSQL database
+```bash
+python -m pytest tests/
+```
 
-## Development
+## Структура проекта
 
-The project is structured to be easily extensible:
-- Add new API endpoints in the `api` directory
-- Create new services in the `services` directory
-- Add new models in the `models` directory
+```
+.
+├── app/
+│   ├── __init__.py
+│   ├── main.py          # Основной файл бота
+│   ├── roles.py         # Управление ролями пользователей
+│   ├── decorators.py    # Декораторы для проверки прав
+│   ├── registration.py  # Система регистрации
+│   ├── vision_helper.py # Работа с OpenAI Vision API
+│   └── openai_helper.py # Общие функции для работы с OpenAI
+├── tests/
+│   ├── test_vision_helper.py  # Тесты анализа изображений
+│   └── ...             # Другие тесты
+├── .env                # Файл с переменными окружения
+├── .env.example        # Пример конфигурации
+├── setup.py           # Настройки пакета
+└── requirements.txt    # Зависимости Python
+```
+
+## Использование
+
+1. Начните чат с ботом, отправив команду `/start`
+2. Подайте заявку на регистрацию
+3. Дождитесь одобрения заявки администратором
+4. После одобрения вы получите роль USER и сможете:
+   - Отправлять изображения для анализа
+   - Добавлять подписи к изображениям с вопросами
+   - Получать детальные описания содержимого фотографий
+
+## Разработка
+
+Проект имеет модульную структуру и легко расширяем:
+- Добавляйте новые роли в `roles.py`
+- Создавайте новые декораторы в `decorators.py`
+- Расширяйте функционал регистрации в `registration.py`
+- Улучшайте анализ изображений в `vision_helper.py`
+
+Весь код покрыт тестами, которые служат также примерами использования.
+
+## Тестирование
+
+Проект содержит полный набор тестов для всех компонентов:
+- Тесты анализа изображений с моками OpenAI API
+- Тесты системы регистрации
+- Тесты управления ролями
+- Тесты обработчиков команд
+
+Запуск тестов с отчетом о покрытии:
+```bash
+pytest -v --cov=app --cov-report=term-missing
+```
+- Тесты декораторов
+
+Запуск тестов с отчетом о покрытии:
+```bash
+python -m pytest tests/ --cov=app
+```
